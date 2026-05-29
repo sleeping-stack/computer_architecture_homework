@@ -1,0 +1,4 @@
+domain_path: D:\computer_architecture_homework\MicroBlaze_AC850\MicroBlaze_AC850.sw\platform_new\export\platform_new\sw\standalone_microblaze_0
+app_src_dir: D:\software_code\Vivado\Vitis\2024.2\data\embeddedsw\lib\sw_apps\empty_application
+template: empty_application
+lang: c
