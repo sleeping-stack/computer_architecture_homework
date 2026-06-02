@@ -1,36 +1,24 @@
-# Ignore build output directory
-/build
-/export
+# ============================================
+# Only track app_parallel_IO/src/ source files
+# ============================================
 
-# Ignore object files and dependent files
-.o
-.d
+# Ignore everything at root
+/*
+# Whitelist: these are tracked
+!.gitignore
+!README.md
+!app_parallel_IO/
 
-#Ignore logs folder and log files
-/logs
-.log
+# Ignore everything inside app_parallel_IO except src/
+app_parallel_IO/*
+!app_parallel_IO/src/
 
-#Ignore lock files
-.lock
-
-.bin
-.pdi
-.vitisWorkspace.json
-
-# IDE temp files
-_ide/logs
-_ide/.wsdata
-_ide/workspace_journal*.py
-
-# clangd index cache
-.cache/
-
-# Ninja build system artifacts
-*.ninja_deps
-*.ninja_log
-
-# Build metadata
-exmetadata/
-
-# Rigel lopper generated files (device tree)
-.rigel_lopper/
+# Inside src, ignore everything by default
+app_parallel_IO/src/*
+# Whitelist: actual source files
+!app_parallel_IO/src/main.c
+!app_parallel_IO/src/CMakeLists.txt
+!app_parallel_IO/src/lscript.ld
+!app_parallel_IO/src/UserConfig.cmake
+!app_parallel_IO/src/app.yaml
+!app_parallel_IO/src/Empty_applicationExample.cmake
