@@ -17,5 +17,20 @@
 .pdi
 .vitisWorkspace.json
 
+# IDE temp files
 _ide/logs
 _ide/.wsdata
+_ide/workspace_journal*.py
+
+# clangd index cache
+.cache/
+
+# Ninja build system artifacts
+*.ninja_deps
+*.ninja_log
+
+# Build metadata
+exmetadata/
+
+# Rigel lopper generated files (device tree)
+.rigel_lopper/

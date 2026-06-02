@@ -1,11 +1,8 @@
 #include "sleep.h"
-#include "stdio.h"
 #include "xgpio_l.h"
 #include "xil_io.h"
 
-// ==========================================
-// 自定义共阴/共阳数码管的字母段码 (以共阳极为准)
-// ==========================================
+// 自定义共阳数码管的字母段码 
 #define SEG_C 0xC6     // 字母 C
 #define SEG_U 0xC1     // 字母 U
 #define SEG_L 0xC7     // 字母 L
@@ -36,7 +33,6 @@ int main() {
   uint8_t current_seg_pattern = SEG_BLANK;
 
   while (1) {
-    short pos = 0xff7f;
 
     for (int i = 0; i < 8; i++) {
       pos = (1 << i);        

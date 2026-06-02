@@ -153,34 +153,91 @@ drv_info:
     driver: gpio
     ip_name: axi_gpio
     path: D:\software_code\Vivado\Vitis\2024.2\data\embeddedsw\XilinxProcessorIPLib\drivers\gpio_v4_12
+    examples:
+      xgpio_example.c: []
+      xgpio_intr_tapp_example.c: []
+      xgpio_low_level_example.c: []
+      xgpio_tapp_example.c: []
   axi_gpio_1:
     driver: gpio
     ip_name: axi_gpio
     path: D:\software_code\Vivado\Vitis\2024.2\data\embeddedsw\XilinxProcessorIPLib\drivers\gpio_v4_12
+    examples:
+      xgpio_example.c: []
+      xgpio_low_level_example.c: []
+      xgpio_tapp_example.c: []
   axi_gpio_2:
     driver: gpio
     ip_name: axi_gpio
     path: D:\software_code\Vivado\Vitis\2024.2\data\embeddedsw\XilinxProcessorIPLib\drivers\gpio_v4_12
+    examples:
+      xgpio_example.c: []
+      xgpio_intr_tapp_example.c: []
+      xgpio_low_level_example.c: []
+      xgpio_tapp_example.c: []
   axi_gpio_3:
     driver: gpio
     ip_name: axi_gpio
     path: D:\software_code\Vivado\Vitis\2024.2\data\embeddedsw\XilinxProcessorIPLib\drivers\gpio_v4_12
+    examples:
+      xgpio_example.c: []
+      xgpio_intr_tapp_example.c: []
+      xgpio_low_level_example.c: []
+      xgpio_tapp_example.c: []
   axi_quad_spi_0:
     driver: spi
     ip_name: axi_quad_spi
     path: D:\software_code\Vivado\Vitis\2024.2\data\embeddedsw\XilinxProcessorIPLib\drivers\spi_v4_13
+    examples:
+      xspi_polled_example.c: []
+      xspi_slave_polled_example.c: []
+      xspi_low_level_example.c: []
+      xspi_winbond_flash_xip_example.c: []
+      xspi_selftest_example.c: []
+      xspi_stm_flash_example.c: []
+      xspi_intr_example.c: []
+      xspi_atmel_flash_example.c: []
+      xspi_eeprom_example.c: []
+      xspi_intel_flash_example.c: []
+      xspi_winbond_flash_quad_example.c: []
+      xspi_numonyx_flash_quad_example.c: []
+      xspi_slave_intr_example.c: []
   axi_quad_spi_1:
     driver: spi
     ip_name: axi_quad_spi
     path: D:\software_code\Vivado\Vitis\2024.2\data\embeddedsw\XilinxProcessorIPLib\drivers\spi_v4_13
+    examples:
+      xspi_polled_example.c: []
+      xspi_slave_polled_example.c: []
+      xspi_low_level_example.c: []
+      xspi_winbond_flash_xip_example.c: []
+      xspi_selftest_example.c: []
+      xspi_stm_flash_example.c: []
+      xspi_intr_example.c: []
+      xspi_atmel_flash_example.c: []
+      xspi_eeprom_example.c: []
+      xspi_intel_flash_example.c: []
+      xspi_winbond_flash_quad_example.c: []
+      xspi_numonyx_flash_quad_example.c: []
+      xspi_slave_intr_example.c: []
   axi_uartlite_0:
     driver: uartlite
     ip_name: axi_uartlite
     path: D:\software_code\Vivado\Vitis\2024.2\data\embeddedsw\XilinxProcessorIPLib\drivers\uartlite_v3_11
+    examples:
+      xuartlite_intr_example.c: []
+      xuartlite_intr_tapp_example.c: []
+      xuartlite_low_level_example.c: []
+      xuartlite_polled_example.c: []
+      xuartlite_selftest_example.c: []
   microblaze_0_axi_intc:
     driver: intc
     ip_name: axi_intc
     path: D:\software_code\Vivado\Vitis\2024.2\data\embeddedsw\XilinxProcessorIPLib\drivers\intc_v3_19
+    examples:
+      xintc_example.c: []
+      xintc_low_level_example.c: []
+      xintc_tapp_example.c: []
 lib_info:
   xiltimer:
     path: D:\software_code\Vivado\Vitis\2024.2\data\embeddedsw\lib\sw_services\xiltimer_v2_1
