@@ -27,8 +27,12 @@ set(USER_UNDEFINED_SYMBOLS
 
 set(USER_INCLUDE_DIRECTORIES
 )
+# 选择实现版本: 1 / 2 / 3
+set(IMPL_VERSION 1)
+
 set(USER_COMPILE_SOURCES
-"main.c"
+#"impl_v${IMPL_VERSION}.c"
+"example_2.c"
 )
 
 # -----------------------------------------
