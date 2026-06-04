@@ -27,15 +27,12 @@ set(USER_UNDEFINED_SYMBOLS
 
 set(USER_INCLUDE_DIRECTORIES
 )
-
-# 选择实现版本:
-#   1 — 轮询版本 (impl_v1.c)
-#   2 — 普通中断版本 (impl_v2.c)，普通中断方式
-#   3 — 快速中断版本 (impl_v3.c)，快速中断方式
-set(IMPL_VERSION 3)
-
 set(USER_COMPILE_SOURCES
-"impl_v${IMPL_VERSION}.c"
+"main.c"
+"User/peripheral_init.c"
+"User/uart.c"
+"User/dac.c"
+"User/dds.c"
 )
 
 # -----------------------------------------
