@@ -3,37 +3,43 @@
 #include "xparameters.h"
 #include "xspi_l.h"
 
-// SPI 基地址 (对应 AXI Quad SPI 1)
-#define DAC_SPI_BASEADDR    XPAR_AXI_QUAD_SPI_1_BASEADDR
-
-// 等待 TX FIFO 不满后写入 16 位数据
+// 阻塞 SPI 写:
+// 自动片选模式下硬件自动在传输时拉低 CS、空闲时拉高 CS,
+// TLV5618 在 CS↑ 时锁存数据到 DAC 输出。
+// 写入前等 TX_EMPTY 确保上一帧已完成 (CS 已拉高),
+// 写入后等 TX_EMPTY 确保本帧已完成 (CS 已拉高), 再返回供下一帧使用。
 static void dac_spi_send(uint16_t frame) {
-  // 等待 TX FIFO 不满 (SR bit 1 == 0)
-  while (Xil_In32(DAC_SPI_BASEADDR + XSP_SR_OFFSET) & XSP_SR_TX_FULL_MASK);
-  Xil_Out32(DAC_SPI_BASEADDR + XSP_DTR_OFFSET, frame);
+  // 等待上一帧传输完成 (TX FIFO + 移位寄存器全空, CS 已自动拉高)
+  while (!(Xil_In32(XPAR_AXI_QUAD_SPI_1_BASEADDR + XSP_SR_OFFSET) &
+           XSP_SR_TX_EMPTY_MASK)) {
+  }
+  // 写入 DTR, 硬件自动拉低 CS 并开始传输 (12.5MHz, 16-bit ≈ 1.3µs)
+  Xil_Out32(XPAR_AXI_QUAD_SPI_1_BASEADDR + XSP_DTR_OFFSET, frame);
+
+  // 等待本帧传输完成 (CS 自动拉高, TLV5618 锁存输出)
+  while (!(Xil_In32(XPAR_AXI_QUAD_SPI_1_BASEADDR + XSP_SR_OFFSET) &
+           XSP_SR_TX_EMPTY_MASK)) {
+  }
 }
 
-// 写 DAC A (R1=1, R0=0): 更新 A 输出, 同时 B 从缓冲区更新
-void dac_write_A(uint16_t data) {
-  uint16_t frame = DAC_DACA_FAST | (data & DAC_DATA_MASK);
+// 单通道写: value=12-bit数据, ctrl=控制字 (DAC_CTRL_A 或 DAC_CTRL_B)
+void dac_write_ch(uint16_t value, uint16_t ctrl) {
+  uint16_t frame = ctrl | (value & DAC_DATA_MASK);
   dac_spi_send(frame);
 }
 
-// 写 DAC B (R1=0, R0=0): 直接更新 B 输出
-void dac_write_B(uint16_t data) {
-  uint16_t frame = DAC_DACB_FAST | (data & DAC_DATA_MASK);
-  dac_spi_send(frame);
-}
+// 写 DAC A (R1=1,R0=0): 更新 A 输出, 同时 B 从缓冲区更新
+void dac_write_A(uint16_t data) { dac_write_ch(data, DAC_DACA_FAST); }
 
-// 同步更新双通道
-// 1. 先将 DAC B 的值写入缓冲区 (R1=0,R0=1), B 输出暂不更新
-// 2. 再写 DAC A (R1=1,R0=0), A 更新输出的同时 B 从缓冲区自动更新
+// 写 DAC B (R1=0,R0=0): 直接更新 B 输出 + 更新缓冲区
+void dac_write_B(uint16_t data) { dac_write_ch(data, DAC_DACB_FAST); }
+
+// 同步双通道更新: 慢速模式 (SPD=0), 数据手册要求的两步协议
+// Step 1: 将 B 通道数据写入 BUFFER (不改变输出)
+// Step 2: 写入 A 通道数据, 同时将 BUFFER 内容转移到 B 输出
+//         两个通道在 Step 2 的 D0 上升沿同步更新
 void dac_write_both(uint16_t data_a, uint16_t data_b) {
-  // 第一步: 预装 B 到缓冲区
-  uint16_t frame_buf = DAC_BUF_FAST | (data_b & DAC_DATA_MASK);
-  dac_spi_send(frame_buf);
-
-  // 第二步: 写 A 并触发 B 同步更新
-  uint16_t frame_a = DAC_DACA_FAST | (data_a & DAC_DATA_MASK);
-  dac_spi_send(frame_a);
+  dac_write_ch(data_b, DAC_BUF_SLOW); // Step 1: B→BUFFER (SPD=0, 不改变输出)
+  dac_write_ch(data_a, DAC_DACA_SYNC_SLOW); // Step 2: A + BUFFER→B 同步触发
 }
+

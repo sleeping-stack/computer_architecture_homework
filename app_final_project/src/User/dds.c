@@ -94,11 +94,12 @@ static uint16_t dds_gen_sample(uint8_t ch) {
 
   case DDS_WAVE_SINE:
   default: {
-    // 正弦查表 + 幅度缩放
+    // 正弦查表 + 幅度缩放 (amp = 峰峰值)
     // 偏差范围 [-2047, +2047], 中心 2048
     idx = ph >> PHASE_SHIFT;
     int16_t dev = (int16_t)(sin_table[idx] - 2048);
-    return (uint16_t)(2048 + (int32_t)dev * (int32_t)amp / 2047);
+    // >> 12 近似 /4096, 误差 ~0.024% 低于 DAC 12-bit 精度
+    return (uint16_t)(2048 + (((int32_t)dev * (int32_t)amp) >> 12));
   }
 
   case DDS_WAVE_SQUARE: {
@@ -109,15 +110,20 @@ static uint16_t dds_gen_sample(uint8_t ch) {
 
   case DDS_WAVE_TRIANGLE: {
     // 三角波: 相位→斜坡→三角折叠
-    // ramp: 0 到 4095 对应 0 到 2π
+    // ramp 0~2047 上升段, 2048~4095 下降段
     uint16_t ramp = ph >> 20;
     uint16_t half = amp / 2;
+    uint32_t scaled;
     if (ramp < 2048) {
-      // 上升段: 2048-half → 2048+half
-      return (uint16_t)(2048 - half + (uint32_t)ramp * amp / 4095);
+      // 上升段: ramp 0→2047 映射到 amp 全幅
+      scaled = ((uint32_t)ramp * amp) >> 11;   // /2048 ≈ /2047
+      uint32_t val = 2048 - half + scaled;
+      return (uint16_t)(val > DDS_MAX_AMPLITUDE ? DDS_MAX_AMPLITUDE : val);
     } else {
-      // 下降段: 2048+half → 2048-half
-      return (uint16_t)(2048 + half - (uint32_t)(ramp - 2048) * amp / 4095);
+      // 下降段: (4095-ramp) 0→2047 映射到 amp 全幅
+      scaled = ((uint32_t)(4095 - ramp) * amp) >> 11;
+      uint32_t val = 2048 - half + scaled;
+      return (uint16_t)(val > DDS_MAX_AMPLITUDE ? DDS_MAX_AMPLITUDE : val);
     }
   }
 
@@ -125,7 +131,9 @@ static uint16_t dds_gen_sample(uint8_t ch) {
     // 锯齿波: ramp 从 0 线性上升到 4095, 中心 2048 ± amp/2
     uint16_t ramp = ph >> 20;
     uint16_t half = amp / 2;
-    return (uint16_t)(2048 - half + (uint32_t)ramp * amp / 4095);
+    uint32_t scaled = ((uint32_t)ramp * amp) >> 12;  // /4096 ≈ /4095
+    uint32_t val = 2048 - half + scaled;
+    return (uint16_t)(val > DDS_MAX_AMPLITUDE ? DDS_MAX_AMPLITUDE : val);
   }
 
   case DDS_WAVE_ARBITRARY:
@@ -141,18 +149,47 @@ static uint16_t dds_gen_sample(uint8_t ch) {
 void dds_init(void) {
   phase[0] = 0;
   phase[1] = 0;
-  fword[0] = 0;
-  fword[1] = 0;
-  amplitude[0] = 0;
-  amplitude[1] = 0;
+
+  // 默认参数: 1kHz 正弦, 满幅 4095mV (启动即输出波形, 无需 UART)
+  // fword = 1kHz * 2^32 / 50000 = 85899346
+  fword[0]      = 85899346;
+  fword[1]      = 85899346;
+  amplitude[0]  = DDS_MAX_AMPLITUDE;
+  amplitude[1]  = DDS_MAX_AMPLITUDE;
+
+  // 同步写入 g_dds_params, 避免 g_uart_rx_flag 处理时覆盖
+  g_dds_params[0].ctrl      = 0;  // 独立模式 + CH1
+  g_dds_params[0].wave_type = DDS_WAVE_SINE;
+  g_dds_params[0].frequency = 1000;
+  g_dds_params[0].amplitude = DDS_MAX_AMPLITUDE;
+  g_dds_params[1].ctrl      = 0;  // 独立模式 + CH1
+  g_dds_params[1].wave_type = DDS_WAVE_SINE;
+  g_dds_params[1].frequency = 1000;
+  g_dds_params[1].amplitude = DDS_MAX_AMPLITUDE;
 }
 
-// F_out * 2^32 / F_sample 的 64 位精确计算
-void dds_set_fword(uint8_t ch, uint32_t freq_hz) {
+// dds_set_params: 同时设置频率和幅度 (从局部变量传入, 不重读 g_dds_params,
+// 避免 ISR 中途覆写造成数据不一致)
+void dds_set_params(uint8_t ch, uint32_t freq_hz, uint32_t amplitude_mv) {
   if (ch > 1) return;
+
+  // 频率钳制: 0 ~ F_SAMPLE/2 (奈奎斯特)
+  if (freq_hz > DDS_MAX_FREQUENCY)
+    freq_hz = DDS_MAX_FREQUENCY;
+
   fword[ch] = (uint32_t)(((uint64_t)freq_hz << 32) / F_SAMPLE);
-  amplitude[ch] = (uint16_t)(g_dds_params[ch].amplitude > 4095 ? 4095
-                              : g_dds_params[ch].amplitude);
+
+  // 幅度钳制: 峰峰值 0~4095 (DAC 12-bit)
+  // amp=0 时默认满幅输出，避免恒直流
+  amplitude[ch] = (amplitude_mv == 0) ? DDS_MAX_AMPLITUDE
+                  : (uint16_t)(amplitude_mv > DDS_MAX_AMPLITUDE
+                                   ? DDS_MAX_AMPLITUDE
+                                   : amplitude_mv);
+}
+
+// 兼容旧接口: 频率字更新, 幅度从全局 g_dds_params 读取
+void dds_set_fword(uint8_t ch, uint32_t freq_hz) {
+  dds_set_params(ch, freq_hz, g_dds_params[ch].amplitude);
 }
 
 // 每采样周期调用一次: 累加相位 + 生成波形

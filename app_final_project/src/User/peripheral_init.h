@@ -10,6 +10,7 @@
 
 void spi_init(void);
 void timer_init(uint32_t freq);
+void uart_init(void);
 void interrupt_init(void);
 
 #endif

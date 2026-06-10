@@ -1,9 +1,11 @@
-#include "User/peripheral_init.h"
-#include "User/uart.h"
 #include "User/dac.h"
 #include "User/dds.h"
+#include "User/peripheral_init.h"
+#include "User/uart.h"
+#include "mb_interface.h"
 #include "xil_exception.h"
 #include "xil_io.h"
+#include "xil_printf.h"
 #include "xparameters.h"
 #include "xtmrctr_l.h"
 
@@ -13,10 +15,10 @@ void Tim_Handler(void);
 void Uart_Handler(void);
 
 int main() {
-  spi_init();
-  dds_init();
-
-  // 定时器: 100MHz / 250kHz - 2 = 398
+  dds_init(); // 先初始化 DDS 参数 (数据先于传输就绪)
+  spi_init(); // 再初始化 SPI
+  uart_init();
+  // 定时器: 100MHz / 50kHz - 2
   timer_init(XPAR_AXI_TIMER_0_CLOCK_FREQUENCY / F_SAMPLE - 2);
   interrupt_init();
 
@@ -24,24 +26,36 @@ int main() {
 
   while (1) {
     if (g_uart_rx_flag == 1) {
-      // 参数更新: 重新计算频率字
-      uint8_t ctrl0 = g_dds_params[0].ctrl;
-      uint8_t mode  = ctrl0 & CTRL_MODE_SYNC;
+      DDS_Params_t p0, p1;
+      uint8_t local_ch;
+
+      // 临界区: 关中断拷贝 g_dds_params 后立即清除标志位,
+      // 防止 ISR 在参数处理期间覆写数据导致帧丢失或数据不一致
+      microblaze_disable_interrupts();
+      p0 = g_dds_params[0];
+      p1 = g_dds_params[1];
+      local_ch = g_last_ch;
+      g_uart_rx_flag = 0;
+      microblaze_enable_interrupts();
+
+      // 从局部副本处理, 不再读取全局 g_dds_params
+      uint8_t mode = p0.ctrl & CTRL_MODE_SYNC;
 
       if (mode == 0) {
         // 独立模式: 仅更新上次选中的通道
-        for (int ch = 0; ch < 2; ch++) {
-          if (g_dds_params[ch].ctrl != 0 || ch == 0) {
-            dds_set_fword(ch, g_dds_params[ch].frequency);
-          }
+        if (local_ch == 0) {
+          dds_set_params(0, p0.frequency, p0.amplitude);
+        } else {
+          dds_set_params(1, p1.frequency, p1.amplitude);
         }
       } else {
-        // 同步模式: 两通道同频
-        dds_set_fword(0, g_dds_params[0].frequency);
-        dds_set_fword(1, g_dds_params[1].frequency);
+        // 同步模式: 两通道同频同幅
+        dds_set_params(0, p0.frequency, p0.amplitude);
+        dds_set_params(1, p1.frequency, p1.amplitude);
       }
 
-      g_uart_rx_flag = 0;  // 清除标志位，允许接收下一帧
+      // 打印放在参数更新之后, 避免阻塞延迟 DDS 更新
+      xil_printf("OK\r\n");
     }
   }
 
@@ -69,18 +83,27 @@ void Tim_Handler(void) {
   // DDS 相位累加 + 波形生成 → 更新 volt_ch1/volt_ch2
   dds_update();
 
-  // 同步输出双通道到 TLV5618
-  dac_write_both(volt_ch1, volt_ch2);
+  // 根据当前模式选择 DAC 写入方式:
+  //   CTRL_MODE_SYNC=0 (独立模式): 仅写入 UART 选中的通道
+  //   CTRL_MODE_SYNC=1 (同步模式): 慢速两步协议同步输出
+  if (g_dds_params[0].ctrl & CTRL_MODE_SYNC) {
+    dac_write_both(volt_ch1, volt_ch2);
+  } else {
+    if (g_last_ch == 0) {
+      dac_write_A(volt_ch1);
+    } else {
+      dac_write_B(volt_ch2);
+    }
+  }
 
-  // 清除定时器中断标志位
+  // 清除定时器中断标志位 (TCSR 中 INT_OCCURED 是 TOW 位, 写回原值即可翻转清除)
   Xil_Out32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET,
-            Xil_In32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET) |
-                XTC_CSR_INT_OCCURED_MASK);
+            Xil_In32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET));
 }
 
 void Uart_Handler(void) {
   static uint8_t state = 0;
-  static uint8_t rx_buffer[13];  // 13 字节协议帧 
+  static uint8_t rx_buffer[13]; // 13 字节协议帧
   static uint8_t data_idx = 0;
   static uint8_t checksum = 0;
 
@@ -113,7 +136,7 @@ void Uart_Handler(void) {
 
     case 2: // 接收数据体 (Ctrl, Type, Freq, Amp) 共 10 字节
       rx_buffer[data_idx] = rx_byte;
-      if (data_idx < 12) {  // 前 10 字节参与异或校验 (索引 2~11)
+      if (data_idx < 12) { // 前 10 字节参与异或校验 (索引 2~11)
         checksum ^= rx_byte;
       }
       data_idx++;
@@ -126,38 +149,39 @@ void Uart_Handler(void) {
     case 3: // 校验及大端模式组装
       if (rx_byte == checksum) {
         // 解析控制字节
-        uint8_t ctrl      = rx_buffer[2];
-        uint8_t mode      = ctrl & CTRL_MODE_SYNC;  // bit[7]: 0=独立, 1=同步
-        uint8_t ch        = ctrl & CTRL_CH_MASK;     // bit[1:0]: 通道
+        uint8_t ctrl = rx_buffer[2];
+        uint8_t mode = ctrl & CTRL_MODE_SYNC; // bit[7]: 0=独立, 1=同步
+        uint8_t ch = ctrl & CTRL_CH_MASK;     // bit[1:0]: 通道
 
-        // 解析波形参数 
-        uint8_t  wave_type = rx_buffer[3];
+        // 解析波形参数
+        uint8_t wave_type = rx_buffer[3];
 
         // 4字节高位在前拼接 频率 (Hz)
         uint32_t frequency =
             ((uint32_t)rx_buffer[4] << 24) | ((uint32_t)rx_buffer[5] << 16) |
-            ((uint32_t)rx_buffer[6] << 8)  | ((uint32_t)rx_buffer[7]);
+            ((uint32_t)rx_buffer[6] << 8) | ((uint32_t)rx_buffer[7]);
 
         // 4字节高位在前拼接 幅度 (mV)
         uint32_t amplitude =
-            ((uint32_t)rx_buffer[8] << 24)  | ((uint32_t)rx_buffer[9] << 16) |
-            ((uint32_t)rx_buffer[10] << 8)  | ((uint32_t)rx_buffer[11]);
+            ((uint32_t)rx_buffer[8] << 24) | ((uint32_t)rx_buffer[9] << 16) |
+            ((uint32_t)rx_buffer[10] << 8) | ((uint32_t)rx_buffer[11]);
 
         if (mode == 0) {
           // 独立模式：仅写入选中通道
           if (ch <= CTRL_CH_CH2) {
-            g_dds_params[ch].ctrl      = ctrl;
+            g_dds_params[ch].ctrl = ctrl;
             g_dds_params[ch].wave_type = wave_type;
             g_dds_params[ch].frequency = frequency;
             g_dds_params[ch].amplitude = amplitude;
+            g_last_ch = ch; // 记录本次选中的通道
           }
         } else {
           // 同步模式：同时写入两个通道
-          g_dds_params[0].ctrl      = ctrl;
+          g_dds_params[0].ctrl = ctrl;
           g_dds_params[0].wave_type = wave_type;
           g_dds_params[0].frequency = frequency;
           g_dds_params[0].amplitude = amplitude;
-          g_dds_params[1].ctrl      = ctrl;
+          g_dds_params[1].ctrl = ctrl;
           g_dds_params[1].wave_type = wave_type;
           g_dds_params[1].frequency = frequency;
           g_dds_params[1].amplitude = amplitude;
