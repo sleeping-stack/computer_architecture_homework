@@ -3,9 +3,7 @@
 #include "User/peripheral_init.h"
 #include "User/uart.h"
 #include "mb_interface.h"
-#include "xil_exception.h"
 #include "xil_io.h"
-#include "xil_printf.h"
 #include "xparameters.h"
 #include "xtmrctr_l.h"
 
@@ -25,17 +23,17 @@ int main() {
   microblaze_enable_interrupts();
 
   while (1) {
-    if (g_uart_rx_flag == 1) {
+    while (g_uart_rx_pending > 0) {
       DDS_Params_t p0, p1;
       uint8_t local_ch;
 
-      // 临界区: 关中断拷贝 g_dds_params 后立即清除标志位,
-      // 防止 ISR 在参数处理期间覆写数据导致帧丢失或数据不一致
+      // 临界区: 关中断拷贝 g_dds_params 并递减计数,
+      // 确保每收到一帧都回一个 OK
       microblaze_disable_interrupts();
       p0 = g_dds_params[0];
       p1 = g_dds_params[1];
       local_ch = g_last_ch;
-      g_uart_rx_flag = 0;
+      g_uart_rx_pending--;
       microblaze_enable_interrupts();
 
       // 从局部副本处理, 不再读取全局 g_dds_params
@@ -49,13 +47,13 @@ int main() {
           dds_set_params(1, p1.frequency, p1.amplitude);
         }
       } else {
-        // 同步模式: 两通道同频同幅
+        // 同步模式: 两通道同频同幅, 对齐相位
         dds_set_params(0, p0.frequency, p0.amplitude);
         dds_set_params(1, p1.frequency, p1.amplitude);
+        dds_align_phase();
       }
 
-      // 打印放在参数更新之后, 避免阻塞延迟 DDS 更新
-      xil_printf("OK\r\n");
+      uart_send_ack();
     }
   }
 
@@ -85,7 +83,7 @@ void Tim_Handler(void) {
 
   // 根据当前模式选择 DAC 写入方式:
   //   CTRL_MODE_SYNC=0 (独立模式): 仅写入 UART 选中的通道
-  //   CTRL_MODE_SYNC=1 (同步模式): 慢速两步协议同步输出
+  //   CTRL_MODE_SYNC=1 (同步模式): 快速两步协议同步输出
   if (g_dds_params[0].ctrl & CTRL_MODE_SYNC) {
     dac_write_both(volt_ch1, volt_ch2);
   } else {
@@ -187,7 +185,8 @@ void Uart_Handler(void) {
           g_dds_params[1].amplitude = amplitude;
         }
 
-        g_uart_rx_flag = 1; // 成功收到完整且合法的数据后将标志位置 1
+        if (g_uart_rx_pending < 255)
+          g_uart_rx_pending++;
       }
       state = 0; // 复位状态机
       break;

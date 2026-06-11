@@ -19,7 +19,9 @@ typedef struct {
 } DDS_Params_t;
 
 extern volatile DDS_Params_t g_dds_params[2]; // CH1, CH2 接收参数存储
-extern volatile uint8_t g_uart_rx_flag;       // 接收完成标志位
+extern volatile uint8_t g_uart_rx_pending;  // 待处理帧计数 (ISR++，主循环--)
 extern volatile uint8_t g_last_ch; // 最后一次 UART 选中的通道 (0=CH1, 1=CH2)
+
+void uart_send_ack(void);
 
 #endif

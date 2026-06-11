@@ -36,6 +36,7 @@ extern volatile uint16_t volt_ch2;
 // ============================================================
 void dds_init(void);
 void dds_update(void);
+void dds_align_phase(void);
 void dds_set_fword(uint8_t ch, uint32_t freq_hz);
 void dds_set_params(uint8_t ch, uint32_t freq_hz, uint32_t amplitude_mv);
 

@@ -41,7 +41,7 @@ void dac_write_A(uint16_t data);
 // 写 DAC B (快速模式)
 void dac_write_B(uint16_t data);
 
-// 同步更新双通道: 慢速模式 (SPD=0), 先预装 B→BUFFER 再写 A 触发同步
+// 同步更新双通道: 快速模式 (SPD=1), 先预装 B→BUFFER 再写 A 触发同步
 void dac_write_both(uint16_t data_a, uint16_t data_b);
 
 #endif

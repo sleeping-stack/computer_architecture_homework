@@ -1,6 +1,7 @@
 #include "peripheral_init.h"
 
-void spi_init(void) {
+void spi_init(void)
+{
   // DAC SPI1 配置
   // 1. 软件复位
   Xil_Out32(XPAR_AXI_QUAD_SPI_1_BASEADDR + XSP_SRR_OFFSET, XSP_SRR_RESET_MASK);
@@ -9,7 +10,7 @@ void spi_init(void) {
   while (Xil_In32(XPAR_AXI_QUAD_SPI_1_BASEADDR + XSP_SRR_OFFSET) && --timeout)
     ;
 
-  // 2. 复位 TX/RX FIFO (清除热启动残留)
+  // 2. 复位 TX/RX FIFO
   Xil_Out32(XPAR_AXI_QUAD_SPI_1_BASEADDR + XSP_CR_OFFSET,
             XSP_CR_TXFIFO_RESET_MASK | XSP_CR_RXFIFO_RESET_MASK);
 
@@ -23,7 +24,8 @@ void spi_init(void) {
   Xil_Out32(XPAR_AXI_QUAD_SPI_1_BASEADDR + XSP_SSR_OFFSET, 0xfffe);
 }
 
-void timer_init(uint32_t load_value) {
+void timer_init(uint32_t load_value)
+{
   // 定时器配置
   int status;
   status = Xil_In32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET);
@@ -39,8 +41,9 @@ void timer_init(uint32_t load_value) {
                 XTC_CSR_ENABLE_TMR_MASK);
 }
 
-void uart_init(void) {
-  // 串口初始化: 先关中断 → 复位 FIFO → 再开中断 (解决热启动残留问题)
+void uart_init(void)
+{
+  // 串口初始化: 先关中断 → 复位 FIFO → 再开中断
   Xil_Out32(XPAR_AXI_UARTLITE_0_BASEADDR + XUL_CONTROL_REG_OFFSET, 0);
   Xil_Out32(XPAR_AXI_UARTLITE_0_BASEADDR + XUL_CONTROL_REG_OFFSET,
             XUL_CR_FIFO_RX_RESET | XUL_CR_FIFO_TX_RESET);
@@ -48,7 +51,8 @@ void uart_init(void) {
             XUL_CR_ENABLE_INTR);
 }
 
-void interrupt_init(void) {
+void interrupt_init(void)
+{
   // 中断配置
   // 1. 设置所有中断为普通中断模式
   Xil_Out32(XPAR_MICROBLAZE_0_AXI_INTC_BASEADDR + XIN_IMR_OFFSET, 0x00000000);

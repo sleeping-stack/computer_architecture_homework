@@ -34,12 +34,24 @@ void dac_write_A(uint16_t data) { dac_write_ch(data, DAC_DACA_FAST); }
 // 写 DAC B (R1=0,R0=0): 直接更新 B 输出 + 更新缓冲区
 void dac_write_B(uint16_t data) { dac_write_ch(data, DAC_DACB_FAST); }
 
-// 同步双通道更新: 慢速模式 (SPD=0), 数据手册要求的两步协议
+// 同步双通道更新: 快速模式 (SPD=1) 两步协议
 // Step 1: 将 B 通道数据写入 BUFFER (不改变输出)
 // Step 2: 写入 A 通道数据, 同时将 BUFFER 内容转移到 B 输出
-//         两个通道在 Step 2 的 D0 上升沿同步更新
+//         两个通道在 Step 2 的 D0 上升沿同步更新 (~3µs 建立, 适配 20µs ISR)
+//
+// 两帧之间需要 CS 上升沿来锁存 Step 1 的数据到 BUFFER。
+// 自动片选模式下 TX_EMPTY 仅表示 TX FIFO 为空,
+// 移位寄存器可能仍在发送 (CS 仍为低电平),
+// 因此两帧之间必须加延时等待移位完成 + CS 自动拉高。
 void dac_write_both(uint16_t data_a, uint16_t data_b) {
-  dac_write_ch(data_b, DAC_BUF_SLOW); // Step 1: B→BUFFER (SPD=0, 不改变输出)
-  dac_write_ch(data_a, DAC_DACA_SYNC_SLOW); // Step 2: A + BUFFER→B 同步触发
+  dac_write_ch(data_b, DAC_BUF_FAST);  // Step 1: B→BUFFER, 不改变输出
+
+  // 等待 Step 1 移位完成 + CS 拉高:
+  // 16 SCLK × 80ns = 1.28µs, 留余量 ~2µs
+  // 确保 CS 已经拉高，Step 1 的数据已锁存到 BUFFER，才能进行 Step 2 的同步更新。
+  for (volatile int i = 0; i < 5; i++) {
+  }
+
+  dac_write_ch(data_a, DAC_DACA_FAST); // Step 2: A + BUFFER→B 同步触发
 }
 

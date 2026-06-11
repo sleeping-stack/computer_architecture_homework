@@ -98,7 +98,7 @@ static uint16_t dds_gen_sample(uint8_t ch) {
     // 偏差范围 [-2047, +2047], 中心 2048
     idx = ph >> PHASE_SHIFT;
     int16_t dev = (int16_t)(sin_table[idx] - 2048);
-    // >> 12 近似 /4096, 误差 ~0.024% 低于 DAC 12-bit 精度
+    // >> 12 近似 /4096
     return (uint16_t)(2048 + (((int32_t)dev * (int32_t)amp) >> 12));
   }
 
@@ -157,7 +157,7 @@ void dds_init(void) {
   amplitude[0]  = DDS_MAX_AMPLITUDE;
   amplitude[1]  = DDS_MAX_AMPLITUDE;
 
-  // 同步写入 g_dds_params, 避免 g_uart_rx_flag 处理时覆盖
+  // 同步写入 g_dds_params, 避免 g_uart_rx_pending 处理时覆盖
   g_dds_params[0].ctrl      = 0;  // 独立模式 + CH1
   g_dds_params[0].wave_type = DDS_WAVE_SINE;
   g_dds_params[0].frequency = 1000;
@@ -180,16 +180,19 @@ void dds_set_params(uint8_t ch, uint32_t freq_hz, uint32_t amplitude_mv) {
   fword[ch] = (uint32_t)(((uint64_t)freq_hz << 32) / F_SAMPLE);
 
   // 幅度钳制: 峰峰值 0~4095 (DAC 12-bit)
-  // amp=0 时默认满幅输出，避免恒直流
-  amplitude[ch] = (amplitude_mv == 0) ? DDS_MAX_AMPLITUDE
-                  : (uint16_t)(amplitude_mv > DDS_MAX_AMPLITUDE
-                                   ? DDS_MAX_AMPLITUDE
-                                   : amplitude_mv);
+  // amp=0 时输出零幅度 (纯直流 2048), 用户可通过此方式静默输出
+  amplitude[ch] = (uint16_t)(amplitude_mv > DDS_MAX_AMPLITUDE
+                                 ? DDS_MAX_AMPLITUDE
+                                 : amplitude_mv);
 }
 
-// 兼容旧接口: 频率字更新, 幅度从全局 g_dds_params 读取
+// 频率字更新
 void dds_set_fword(uint8_t ch, uint32_t freq_hz) {
   dds_set_params(ch, freq_hz, g_dds_params[ch].amplitude);
+}
+
+void dds_align_phase(void) {
+  phase[1] = phase[0];
 }
 
 // 每采样周期调用一次: 累加相位 + 生成波形
