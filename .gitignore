@@ -14,6 +14,7 @@ app_parallel_IO/src/*
 # Whitelist: actual source files
 !app_parallel_IO/src/*.c
 !app_parallel_IO/src/UserConfig.cmake
+!app_parallel_IO/src/*.md
 
 # Whitelist: app_DAC
 !app_DAC/
@@ -22,6 +23,7 @@ app_DAC/*
 app_DAC/src/*
 !app_DAC/src/*.c
 !app_DAC/src/UserConfig.cmake
+!app_DAC/src/*.md
 
 # Whitelist: app_final_project
 !app_final_project/
@@ -34,3 +36,14 @@ app_final_project/src/*
 app_final_project/src/User/*
 !app_final_project/src/User/*.c
 !app_final_project/src/User/*.h
+!app_final_project/src/*.md
+!app_final_project/src/User/*.md
+
+# Whitelist: app_ADC
+!app_ADC/
+app_ADC/*
+!app_ADC/src/
+app_ADC/src/*
+!app_ADC/src/*.c
+!app_ADC/src/UserConfig.cmake
+!app_ADC/src/*.md

@@ -5,7 +5,8 @@
 
 volatile DDS_Params_t g_dds_params[2];  // CH1, CH2 接收参数存储
 volatile uint8_t g_uart_rx_pending = 0; // 待处理帧计数
-volatile uint8_t g_last_ch = 0;         // 最后一次 UART 选中的通道
+volatile uint8_t g_uart_rx_flags = 0;   // 待处理通道标记: bit0=CH1, bit1=CH2
+volatile uint8_t g_last_ch = 0;         // 最后活动通道
 
 void uart_send_ack(void) {
   static const char ack[] = "OK\r\n";

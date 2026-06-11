@@ -1,5 +1,6 @@
 #include "User/dac.h"
 #include "User/dds.h"
+#include "User/kb_display.h"
 #include "User/peripheral_init.h"
 #include "User/uart.h"
 #include "mb_interface.h"
@@ -14,43 +15,50 @@ void Uart_Handler(void);
 
 int main() {
   dds_init(); // 先初始化 DDS 参数 (数据先于传输就绪)
+  kb_display_init(); // 初始化键盘/显示外设 (需在 dds_init 之后, 读取 g_dds_params 默认值)
   spi_init(); // 再初始化 SPI
   uart_init();
-  // 定时器: 100MHz / 50kHz - 2
+  // 定时器: 100MHz / 100kHz - 2
   timer_init(XPAR_AXI_TIMER_0_CLOCK_FREQUENCY / F_SAMPLE - 2);
   interrupt_init();
 
   microblaze_enable_interrupts();
 
   while (1) {
+    kb_display_poll(); // 处理键盘输入事件
+
     while (g_uart_rx_pending > 0) {
       DDS_Params_t p0, p1;
-      uint8_t local_ch;
+      uint8_t flags;
 
-      // 临界区: 关中断拷贝 g_dds_params 并递减计数,
-      // 确保每收到一帧都回一个 OK
+      // 临界区: 关中断拷贝 g_dds_params 和 flags,
+      // 清零标记并递减计数 (每帧对应一次 ACK)
       microblaze_disable_interrupts();
       p0 = g_dds_params[0];
       p1 = g_dds_params[1];
-      local_ch = g_last_ch;
+      flags = g_uart_rx_flags;
+      g_uart_rx_flags = 0;
       g_uart_rx_pending--;
       microblaze_enable_interrupts();
 
-      // 从局部副本处理, 不再读取全局 g_dds_params
       uint8_t mode = p0.ctrl & CTRL_MODE_SYNC;
 
       if (mode == 0) {
-        // 独立模式: 仅更新上次选中的通道
-        if (local_ch == 0) {
-          dds_set_params(0, p0.frequency, p0.amplitude);
-        } else {
-          dds_set_params(1, p1.frequency, p1.amplitude);
+        // 独立模式: 仅更新标记的通道, 另一通道保持原有参数继续运行
+        if (flags & 0x01) {
+          dds_set_params(0, p0.frequency, p0.amplitude, p0.wave_type);
+          display_sync_from_uart(0); // 同步 LED/数码管
+        }
+        if (flags & 0x02) {
+          dds_set_params(1, p1.frequency, p1.amplitude, p1.wave_type);
+          display_sync_from_uart(1); // 同步 LED/数码管
         }
       } else {
-        // 同步模式: 两通道同频同幅, 对齐相位
-        dds_set_params(0, p0.frequency, p0.amplitude);
-        dds_set_params(1, p1.frequency, p1.amplitude);
+        // 同步模式: 两通道同频同幅同波形, 对齐相位
+        dds_set_params(0, p0.frequency, p0.amplitude, p0.wave_type);
+        dds_set_params(1, p1.frequency, p1.amplitude, p1.wave_type);
         dds_align_phase();
+        display_sync_from_uart(0); // 同步模式: 显示跟随 CH1
       }
 
       uart_send_ack();
@@ -72,6 +80,18 @@ void MyISR() {
   if ((inst_status & (1 << XPAR_FABRIC_AXI_UARTLITE_0_INTR))) {
     Uart_Handler();
   }
+  // GPIO3 键盘中断
+  if ((inst_status & (1 << XPAR_FABRIC_AXI_GPIO_3_INTR))) {
+    key_scan_isr();
+  }
+  // GPIO0 拨码开关中断
+  if ((inst_status & (1 << XPAR_FABRIC_AXI_GPIO_0_INTR))) {
+    sw_isr();
+  }
+  // GPIO2 模式按键中断
+  if ((inst_status & (1 << XPAR_FABRIC_AXI_GPIO_2_INTR))) {
+    mode_btn_isr();
+  }
 
   // 写IAR,清除标志位
   Xil_Out32(XPAR_MICROBLAZE_0_AXI_INTC_BASEADDR + XIN_IAR_OFFSET, inst_status);
@@ -81,18 +101,10 @@ void Tim_Handler(void) {
   // DDS 相位累加 + 波形生成 → 更新 volt_ch1/volt_ch2
   dds_update();
 
-  // 根据当前模式选择 DAC 写入方式:
-  //   CTRL_MODE_SYNC=0 (独立模式): 仅写入 UART 选中的通道
-  //   CTRL_MODE_SYNC=1 (同步模式): 快速两步协议同步输出
-  if (g_dds_params[0].ctrl & CTRL_MODE_SYNC) {
-    dac_write_both(volt_ch1, volt_ch2);
-  } else {
-    if (g_last_ch == 0) {
-      dac_write_A(volt_ch1);
-    } else {
-      dac_write_B(volt_ch2);
-    }
-  }
+  // 双通道始终同步输出 (独立/同步模式仅影响参数管理策略)
+  dac_write_both(volt_ch1, volt_ch2);
+
+  kb_display_tick(); // 数码管动态扫描
 
   // 清除定时器中断标志位 (TCSR 中 INT_OCCURED 是 TOW 位, 写回原值即可翻转清除)
   Xil_Out32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET,
@@ -171,7 +183,7 @@ void Uart_Handler(void) {
             g_dds_params[ch].wave_type = wave_type;
             g_dds_params[ch].frequency = frequency;
             g_dds_params[ch].amplitude = amplitude;
-            g_last_ch = ch; // 记录本次选中的通道
+            g_uart_rx_flags |= (1 << ch); // 标记对应通道待处理
           }
         } else {
           // 同步模式：同时写入两个通道
@@ -183,6 +195,7 @@ void Uart_Handler(void) {
           g_dds_params[1].wave_type = wave_type;
           g_dds_params[1].frequency = frequency;
           g_dds_params[1].amplitude = amplitude;
+          g_uart_rx_flags |= 0x03; // 标记两通道均待处理
         }
 
         if (g_uart_rx_pending < 255)

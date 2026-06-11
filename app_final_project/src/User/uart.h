@@ -8,7 +8,6 @@
 #define CTRL_CH_MASK 0x03   // bit[1:0] 通道掩码
 #define CTRL_CH_CH1 0x00    // 选中 CH1
 #define CTRL_CH_CH2 0x01    // 选中 CH2
-#define CTRL_CH_BOTH 0x02   // 双通道同时(同步模式)
 
 // DDS参数结构体
 typedef struct {
@@ -20,7 +19,8 @@ typedef struct {
 
 extern volatile DDS_Params_t g_dds_params[2]; // CH1, CH2 接收参数存储
 extern volatile uint8_t g_uart_rx_pending;  // 待处理帧计数 (ISR++，主循环--)
-extern volatile uint8_t g_last_ch; // 最后一次 UART 选中的通道 (0=CH1, 1=CH2)
+extern volatile uint8_t g_uart_rx_flags;    // 待处理通道标记: bit0=CH1, bit1=CH2
+extern volatile uint8_t g_last_ch;          // 最后活动通道 (键盘/UART 切换同步)
 
 void uart_send_ack(void);
 
