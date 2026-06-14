@@ -27,12 +27,8 @@ void setup_system_interrupts(void);
 int main() {
   init_peripherals();
   setup_system_interrupts();
-  xil_printf("\r\n==============================================\r\n");
-  xil_printf("  MicroBlaze ADC Sampling System Initialized  \r\n");
-  xil_printf("  Base Clock: 100 MHz                         \r\n");
-  xil_printf("  Sampling Interval: 0.1s ~ 12.8s             \r\n");
-  xil_printf("  Waiting for Switch input & ADC Data...      \r\n");
-  xil_printf("==============================================\r\n\r\n");
+  xil_printf("\r\n=== ADC128S102 Voltage Meter ===\r\n");
+  xil_printf("  Interval: 0.1s~12.8s (DIP switch)\r\n\r\n");
 
   while (1) {
     if (flag_sw_changed == 1) {
@@ -41,20 +37,16 @@ int main() {
       unsigned int sec = time_ms / 1000;          // 整数秒
       unsigned int frac = (time_ms % 1000) / 100; // 小数点后一位
 
-      xil_printf("\r\n[SYS INFO] Switch Toggled!\r\n");
-      xil_printf("    -> Switch Raw Value: %d\r\n", current_sw_data);
-      xil_printf("    -> New ADC Sampling Interval: %d.%d seconds\r\n", sec,
-                 frac);
-      xil_printf("----------------------------------------------\r\n");
+      xil_printf("[SW] val=%d -> %d.%ds\r\n", current_sw_data, sec, frac);
     }
 
     if (flag_adc_ready == 1) {
       flag_adc_ready = 0;
 
-      unsigned int voltage_mv = (current_adc_data * 3300) / 4095 * 2;
+      unsigned int voltage_mv = (current_adc_data * 3300) / 4095;
       unsigned int vol_int = voltage_mv / 1000;
       unsigned int vol_frac = voltage_mv % 1000;
-      xil_printf("[ADC DATA] Raw: 0x%04X -> Voltage: %d.%03d V\r\n",
+      xil_printf("[ADC] 0x%04X = %d.%03dV\r\n",
                  current_adc_data, vol_int, vol_frac);
     }
   }
@@ -119,7 +111,7 @@ void adc_handler() {
   int spi_cr = Xil_In32(XPAR_AXI_QUAD_SPI_0_BASEADDR + XSP_CR_OFFSET);
   Xil_Out32(XPAR_AXI_QUAD_SPI_0_BASEADDR + XSP_CR_OFFSET,
             spi_cr | XSP_CR_TRANS_INHIBIT_MASK);
-  current_adc_data = Xil_In16(XPAR_AXI_QUAD_SPI_0_BASEADDR + XSP_DRR_OFFSET);
+  current_adc_data = Xil_In32(XPAR_AXI_QUAD_SPI_0_BASEADDR + XSP_DRR_OFFSET) & 0xFFFF;
   Xil_Out32(XPAR_AXI_QUAD_SPI_0_BASEADDR + XSP_IISR_OFFSET,
             XSP_INTR_TX_EMPTY_MASK);
   Xil_Out32(XPAR_MICROBLAZE_0_AXI_INTC_BASEADDR + XIN_IAR_OFFSET, 0x02);
@@ -135,7 +127,9 @@ void init_peripherals(void) {
   Xil_Out32(XPAR_AXI_QUAD_SPI_0_BASEADDR + XSP_SRR_OFFSET, XSP_SRR_RESET_MASK);
   Xil_Out32(XPAR_AXI_QUAD_SPI_0_BASEADDR + XSP_CR_OFFSET,
             XSP_CR_ENABLE_MASK | XSP_CR_MASTER_MODE_MASK |
-                XSP_CR_CLK_POLARITY_MASK | XSP_CR_TRANS_INHIBIT_MASK);
+                XSP_CR_CLK_POLARITY_MASK | XSP_CR_CLK_PHASE_MASK |
+                XSP_CR_TXFIFO_RESET_MASK | XSP_CR_RXFIFO_RESET_MASK |
+                XSP_CR_TRANS_INHIBIT_MASK);
   Xil_Out32(XPAR_AXI_QUAD_SPI_0_BASEADDR + XSP_SSR_OFFSET, 0xffffffff);
   Xil_Out32(XPAR_AXI_QUAD_SPI_0_BASEADDR + XSP_IIER_OFFSET, 0x0);
   Xil_Out32(XPAR_AXI_QUAD_SPI_0_BASEADDR + XSP_DGIER_OFFSET,
