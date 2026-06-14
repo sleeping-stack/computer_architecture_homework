@@ -1,9 +1,9 @@
 #include "xgpio_l.h"
-#include "xil_exception.h"
 #include "xil_io.h"
 #include "xil_printf.h"
 #include "xintc_l.h"
 #include "xparameters.h"
+#include "mb_interface.h"
 #include "xspi_l.h"
 #include "xtmrctr_l.h"
 
@@ -48,7 +48,6 @@ int main() {
       xil_printf("----------------------------------------------\r\n");
     }
 
-    // 2. 处理 ADC 数据就绪事件
     if (flag_adc_ready == 1) {
       flag_adc_ready = 0;
 
@@ -66,20 +65,30 @@ int main() {
 // 1. GPIO 中断：开关拨动改变频率 (硬件中断通道 In4)
 void switch_handler() {
   // 读取 GPIO 数据
-  current_sw_data = Xil_In16(XPAR_AXI_GPIO_0_BASEADDR + XGPIO_DATA_OFFSET);
+  current_sw_data = Xil_In32(XPAR_AXI_GPIO_0_BASEADDR + XGPIO_DATA_OFFSET) & 0xFF;
 
   // 计算定时器加载值: (sw_data + 1) * 0.1s
   unsigned int timer_load_value = (BASE_TIME_0_1_S + 2) * (current_sw_data + 1) - 2;
 
   // 更新定时器
-  int tcsr0 = Xil_In32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET);
+  // 停止定时器
+  unsigned int tcsr0 = Xil_In32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET);
   Xil_Out32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET,
             tcsr0 & ~XTC_CSR_ENABLE_TMR_MASK);
+
+  // 写入新的加载值
   Xil_Out32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TLR_OFFSET, timer_load_value);
+
+  // 重新读取 TCSR（定时器已停止，获得干净的基准状态）
+  unsigned int tcsr_base = Xil_In32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET);
+
+  // 触发 LOAD，将 TLR 值装入计数器
   Xil_Out32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET,
-            tcsr0 | XTC_CSR_LOAD_MASK);
+            tcsr_base | XTC_CSR_LOAD_MASK);
+
+  // 清除 LOAD，重新使能定时器并配置完整模式
   Xil_Out32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET,
-            (tcsr0 & ~XTC_CSR_LOAD_MASK) | XTC_CSR_ENABLE_TMR_MASK |
+            (tcsr_base & ~XTC_CSR_LOAD_MASK) | XTC_CSR_ENABLE_TMR_MASK |
                 XTC_CSR_AUTO_RELOAD_MASK | XTC_CSR_ENABLE_INT_MASK |
                 XTC_CSR_DOWN_COUNT_MASK | XTC_CSR_INT_OCCURED_MASK);
 
@@ -119,8 +128,8 @@ void adc_handler() {
 
 // 外设初始配置函数
 void init_peripherals(void) {
-  Xil_Out32(XPAR_AXI_GPIO_0_BASEADDR + XGPIO_TRI_OFFSET, 0x0000ffff);
-  Xil_Out16(XPAR_AXI_GPIO_0_BASEADDR + XGPIO_TRI2_OFFSET, 0x0);
+  Xil_Out32(XPAR_AXI_GPIO_0_BASEADDR + XGPIO_TRI_OFFSET, 0xFF);
+  Xil_Out32(XPAR_AXI_GPIO_0_BASEADDR + XGPIO_TRI2_OFFSET, 0x0);
   Xil_Out32(XPAR_AXI_GPIO_0_BASEADDR + XGPIO_ISR_OFFSET,
             XGPIO_IR_CH1_MASK | XGPIO_IR_CH2_MASK);
   Xil_Out32(XPAR_AXI_QUAD_SPI_0_BASEADDR + XSP_SRR_OFFSET, XSP_SRR_RESET_MASK);
@@ -132,14 +141,24 @@ void init_peripherals(void) {
   Xil_Out32(XPAR_AXI_QUAD_SPI_0_BASEADDR + XSP_DGIER_OFFSET,
             XSP_GINTR_ENABLE_MASK);
 
-  int tcsr0 = Xil_In32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET);
+  // 停止定时器
+  unsigned int tcsr0 = Xil_In32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET);
   Xil_Out32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET,
             tcsr0 & ~XTC_CSR_ENABLE_TMR_MASK);
+
+  // 写入初始加载值
   Xil_Out32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TLR_OFFSET, BASE_TIME_0_1_S);
+
+  // 重新读取 TCSR（定时器已停止，获得干净的基准状态）
+  unsigned int tcsr_base = Xil_In32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET);
+
+  // 触发 LOAD，将 TLR 值装入计数器
   Xil_Out32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET,
-            tcsr0 | XTC_CSR_LOAD_MASK);
+            tcsr_base | XTC_CSR_LOAD_MASK);
+
+  // 清除 LOAD，使能定时器并配置完整模式
   Xil_Out32(XPAR_AXI_TIMER_0_BASEADDR + XTC_TCSR_OFFSET,
-            (tcsr0 & ~XTC_CSR_LOAD_MASK) | XTC_CSR_ENABLE_TMR_MASK |
+            (tcsr_base & ~XTC_CSR_LOAD_MASK) | XTC_CSR_ENABLE_TMR_MASK |
                 XTC_CSR_AUTO_RELOAD_MASK | XTC_CSR_ENABLE_INT_MASK |
                 XTC_CSR_DOWN_COUNT_MASK | XTC_CSR_INT_OCCURED_MASK);
 }
