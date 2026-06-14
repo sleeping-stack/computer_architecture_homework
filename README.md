@@ -18,6 +18,7 @@
 | [`app_DAC/`](app_DAC/src/README.md) | DAC 锯齿波实验 | 定时器中断 + SPI 驱动 TLV5618 | [README](app_DAC/src/README.md) |
 | [`app_final_project/`](app_final_project/src/README.md) | DDS 双通道信号发生器 | DDS + SPI DAC + UART 协议 + 键盘显示 | [README](app_final_project/src/README.md) |
 | [`app_ADC/`](app_ADC/src/README.md) | ADC 采样实验 | SPI ADC + 定时器触发 + 串口输出 | [README](app_ADC/src/README.md) |
+| [`操作考试复习/`](操作考试复习/README.md) | 操作考试复习资料 | 并行IO实验复习（任务0–3 + 题目A–E），每题含轮询/普通中断/快速中断三版本 | [README](操作考试复习/README.md) |
 
 ## 软件环境
 
@@ -70,10 +71,17 @@ python scripts/dds_host.py --list
 │   │   ├── kb_display.c/h             # 键盘扫描 + 数码管 + 开关/按键中断
 │   │   └── peripheral_init.c/h        # SPI/Timer/Interrupt 初始化
 │   └── UserConfig.cmake
-└── app_ADC/src/                       # ADC 实验
-    ├── README.md                      # 实验文档
-    ├── main.c                         # 快速中断 ISR + SPI ADC 采样
-    └── UserConfig.cmake
+├── app_ADC/src/                       # ADC 实验
+│   ├── README.md                      # 实验文档
+│   ├── main.c                         # 快速中断 ISR + SPI ADC 采样
+│   └── UserConfig.cmake
+└── 操作考试复习/                       # 操作考试复习资料
+    ├── README.md                      # 复习总览（硬件映射、段码表、题目速览）
+    ├── 题目.md                        # 全部实验题目描述
+    ├── EDA-V4扩展板原理图.pdf          # 扩展板硬件原理图
+    ├── 共阳极数码管.png                # 数码管参考图
+    ├── 任务0/–任务3/                   # 实验任务0–3（基础并行IO实验）
+    └── 题目A/–题目E/                   # 题目A–E（综合应用题）
 ```
 
 ## 构建
