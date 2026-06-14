@@ -47,3 +47,5 @@ app_ADC/src/*
 !app_ADC/src/*.c
 !app_ADC/src/UserConfig.cmake
 !app_ADC/src/*.md
+
+!操作考试复习
